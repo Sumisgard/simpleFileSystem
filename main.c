@@ -9,6 +9,9 @@ void show_menu() {
     printf("2. Создать файл\n");
     printf("3. Показать файлы\n");
     printf("4. Удалить файл\n");
+    printf("5. Перезапись в файл\n");
+    printf("6. Дозапись в файл\n");
+    printf("7. Прочитать файл\n");
     printf("0. Выход\n");
     printf("Выбор: ");
 }
@@ -69,7 +72,61 @@ int main() {
                     }
                 }
                 break;
-                
+                case 5:
+    if (!fs) fs = open_fs(fs_name);
+    if (fs) {
+        printf("Имя файла: ");
+        fgets(filename, sizeof(filename), stdin);
+        filename[strcspn(filename, "\n")] = '\0';
+
+        printf("Введите данные: ");
+        char data[1024];
+        fgets(data, sizeof(data), stdin);
+        data[strcspn(data, "\n")] = '\0';
+
+        if (write_file(fs, filename, data)) {
+            printf("Запись успешна\n");
+        } else {
+            printf("Ошибка записи\n");
+        }
+    }
+    break;
+    case 6:
+    if (!fs) fs = open_fs(fs_name);
+    if (fs) {
+        printf("Имя файла: ");
+        fgets(filename, sizeof(filename), stdin);
+        filename[strcspn(filename, "\n")] = '\0';
+
+        printf("Введите данные: ");
+        char data[1024];
+        fgets(data, sizeof(data), stdin);
+        data[strcspn(data, "\n")] = '\0';
+
+        if (write_file1(fs, filename, data)) {
+            printf("Запись успешна\n");
+        } else {
+            printf("Ошибка записи\n");
+        }
+    }
+    break;
+
+case 7:
+    if (!fs) fs = open_fs(fs_name);
+    if (fs) {
+        printf("Имя файла: ");
+        fgets(filename, sizeof(filename), stdin);
+        filename[strcspn(filename, "\n")] = '\0';
+
+        char buffer[1024];
+        if (read_file(fs, filename, buffer, sizeof(buffer))) {
+            printf("Содержимое файла:\n%s\n", buffer);
+        } else {
+            printf("Ошибка чтения\n");
+        }
+    }
+    break;
+
             case 0:
                 if (fs) close_fs(fs);
                 return 0;

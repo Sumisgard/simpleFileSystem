@@ -48,4 +48,10 @@ int create_file(FILE* fs, const char* name);
 bool delete_file(FILE* fs, const char* name);
 void list_files(FILE* fs);
 
+int write_file(FILE* fs, const char* filename, const char* data);
+int write_file1(FILE* fs, const char* filename, const char* data);
+
+int read_file(FILE* fs, const char* filename, char* buffer, size_t max_size);
+
+
 #endif
