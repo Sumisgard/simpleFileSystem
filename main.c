@@ -1,9 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "myfs.h"
+#include "myfs.h" // Заголовочный файл файловой системы
 
-// Цвета
+// Цветовые коды ANSI 
 #define RESET   "\033[0m"
 #define RED     "\033[31m"
 #define GREEN   "\033[32m"
@@ -12,6 +12,7 @@
 #define CYAN    "\033[36m"
 #define BOLD    "\033[1m"
 
+// Функция для отображения меню с командами
 void show_menu() {
     printf("\n%s========== %sMYFS МЕНЮ%s ==========%s\n", CYAN, BOLD, CYAN, RESET);
     printf("%s 1.%s 📦 Форматирование/инициализация ФС\n", GREEN, RESET);
@@ -26,6 +27,7 @@ void show_menu() {
     printf("%sВыбор:%s ", BOLD, RESET);
 }
 
+// Функция для отображения справки по командам
 void show_help() {
     printf("\n%sОПИСАНИЕ КОМАНД:%s\n", CYAN, RESET);
     printf("1. Форматирование/инициализация — создаёт новую файловую систему на 'disk.img'\n");
@@ -39,32 +41,34 @@ void show_help() {
     printf("0. Выход — завершает программу\n");
 }
 
+// Функция для чтения многострочного текста от пользователя (до Ctrl+D / Ctrl+Z)
 char* read_multiline_input() {
     printf("Введите данные (завершите Ctrl+D или Ctrl+Z):\n\n");
 
-    size_t size = 1024;
-    size_t len = 0;
-    char* buffer = malloc(size);
+    size_t size = 1024;           // начальный размер буфера
+    size_t len = 0;               // текущая длина строки
+    char* buffer = malloc(size);  // выделение памяти
     if (!buffer) return NULL;
 
     int c;
     while ((c = getchar()) != EOF) {
-        if (len + 1 >= size) {
-            size *= 2;
-            buffer = realloc(buffer, size);
+        if (len + 1 >= size) {                // если буфер переполнен
+            size *= 2;                        // увеличить размер буфера
+            buffer = realloc(buffer, size);   // перевыделить память
             if (!buffer) return NULL;
         }
-        buffer[len++] = (char)c;
+        buffer[len++] = (char)c;              // добавить символ в буфер
     }
-    buffer[len] = '\0';
+    buffer[len] = '\0';                       // завершение строки
     return buffer;
 }
 
+// Главная функция программы
 int main() {
-    const char* fs_name = "disk.img";
-    FILE* fs = NULL;
+    const char* fs_name = "disk.img"; // имя файла, в котором хранится файловая система
+    FILE* fs = NULL; // дескриптор открытой файловой системы
 
-    // Автоинициализация ФС
+    // Проверка наличия файла ФС, автоматическая инициализация при отсутствии
     FILE* test = fopen(fs_name, "rb");
     if (!test) {
         printf("%s[ИНФО]%s Файл ФС не найден. Выполняется инициализация...\n", YELLOW, RESET);
@@ -73,142 +77,156 @@ int main() {
             return 1;
         }
         printf("%s[ОК]%s ФС успешно инициализирована\n", GREEN, RESET);
-    } else {
+    }
+    else {
         fclose(test);
     }
 
-    int choice;
-    char filename[256];
+    int choice;                 // выбор пользователя в меню
+    char filename[256];         // имя файла, вводимое пользователем
 
+    // Главный цикл программы — интерфейс команд
     while (1) {
         show_menu();
 
-        if (scanf("%d", &choice) != 1) {
+        if (scanf("%d", &choice) != 1) {  // чтение выбора
             printf("Ошибка ввода\n");
-            while (getchar() != '\n');
+            while (getchar() != '\n');    // очистка ввода
             continue;
         }
-        getchar();  // очищаем \n
-
+        getchar(); // удаление символа новой строки после числа
+        // Обработка команд
         switch (choice) {
-            case 1:
-                if (format_fs(fs_name)) {
-                    printf("%s[ОК]%s ФС успешно отформатирована и инициализирована\n", GREEN, RESET);
-                } else {
-                    printf("%s[ОШИБКА]%s Ошибка форматирования\n", RED, RESET);
+        case 1:
+            // Форматирование ФС
+            if (format_fs(fs_name)) {
+                printf("%s[ОК]%s ФС успешно отформатирована и инициализирована\n", GREEN, RESET);
+            }
+            else {
+                printf("%s[ОШИБКА]%s Ошибка форматирования\n", RED, RESET);
+            }
+            break;
+
+        case 2:
+            // Создание нового файла
+            if (!fs) fs = open_fs(fs_name);
+            if (fs) {
+                printf("Имя файла: ");
+                fgets(filename, sizeof(filename), stdin);
+                filename[strcspn(filename, "\n")] = '\0'; // удаление \n
+                if (create_file(fs, filename) >= 0) {
+                    printf("Файл создан\n");
                 }
-                break;
-
-            case 2:
-                if (!fs) fs = open_fs(fs_name);
-                if (fs) {
-                    printf("Имя файла: ");
-                    fgets(filename, sizeof(filename), stdin);
-                    filename[strcspn(filename, "\n")] = '\0';
-                    if (create_file(fs, filename) >= 0) {
-                        printf("Файл создан\n");
-                    } else {
-                        printf("Ошибка создания файла\n");
-                    }
+                else {
+                    printf("Ошибка создания файла\n");
                 }
-                break;
+            }
+            break;
 
-            case 3:
-                if (!fs) fs = open_fs(fs_name);
-                if (fs) list_files(fs);
-                break;
-                
+        case 3:
+            // Отображение списка файлов
+            if (!fs) fs = open_fs(fs_name);
+            if (fs) list_files(fs);
+            break;
 
-            case 4:
-                if (!fs) fs = open_fs(fs_name);
-                if (fs) {
-                    printf("Имя файла: ");
-                    fgets(filename, sizeof(filename), stdin);
-                    filename[strcspn(filename, "\n")] = '\0';
-                    if (delete_file(fs, filename)) {
-                        printf("Файл удалён\n");
-                    } else {
-                        printf("Ошибка удаления\n");
-                    }
+        case 4:
+            // Удаление файла
+            if (!fs) fs = open_fs(fs_name);
+            if (fs) {
+                printf("Имя файла: ");
+                fgets(filename, sizeof(filename), stdin);
+                filename[strcspn(filename, "\n")] = '\0';
+                if (delete_file(fs, filename)) {
+                    printf("Файл удалён\n");
                 }
-                break;
-
-            case 5:
-                if (!fs) fs = open_fs(fs_name);
-                if (fs) {
-                    printf("Имя файла: ");
-                    fgets(filename, sizeof(filename), stdin);
-                    filename[strcspn(filename, "\n")] = '\0';
-
-                    getchar();
-                    char* data = read_multiline_input();
-                    if (!data) {
-                        printf("Ошибка чтения данных\n");
-                        break;
-                    }
-
-                    if (write_file(fs, filename, data)) {
-                        printf("\nЗапись успешна\n");
-                    } else {
-                        printf("\nОшибка записи\n");
-                    }
-                    free(data);
+                else {
+                    printf("Ошибка удаления\n");
                 }
-                break;
+            }
+            break;
 
-            case 6:
-                if (!fs) fs = open_fs(fs_name);
-                if (fs) {
-                    printf("Имя файла: ");
-                    fgets(filename, sizeof(filename), stdin);
-                    filename[strcspn(filename, "\n")] = '\0';
+        case 5:
+            // Перезапись содержимого файла
+            if (!fs) fs = open_fs(fs_name);
+            if (fs) {
+                printf("Имя файла: ");
+                fgets(filename, sizeof(filename), stdin);
+                filename[strcspn(filename, "\n")] = '\0';
 
-                    getchar();
-                    char* data = read_multiline_input();
-                    if (!data) {
-                        printf("Ошибка чтения данных\n");
-                        break;
-                    }
-
-                    if (write_file1(fs, filename, data)) {
-                        printf("\nЗапись успешна\n");
-                    } else {
-                        printf("\nОшибка записи\n");
-                    }
-                    free(data);
+                getchar();
+                char* data = read_multiline_input();
+                if (!data) {
+                    printf("Ошибка чтения данных\n");
+                    break;
                 }
-                break;
 
-            case 7:
-                if (!fs) fs = open_fs(fs_name);
-                if (fs) {
-                    printf("Имя файла: ");
-                    fgets(filename, sizeof(filename), stdin);
-                    filename[strcspn(filename, "\n")] = '\0';
-
-                    char buffer[1024];
-                    if (read_file(fs, filename, buffer, sizeof(buffer))) {
-                        printf("Содержимое файла:\n%s\n", buffer);
-                    } else {
-                        printf("Ошибка чтения\n");
-                    }
+                if (write_file(fs, filename, data)) {
+                    printf("\nЗапись успешна\n");
                 }
-                break;
+                else {
+                    printf("\nОшибка записи\n");
+                }
+                free(data);
+            }
+            break;
 
-            case 8:
-                show_help();
-                break;
+        case 6:
+            // Дозапись в файл
+            if (!fs) fs = open_fs(fs_name);
+            if (fs) {
+                printf("Имя файла: ");
+                fgets(filename, sizeof(filename), stdin);
+                filename[strcspn(filename, "\n")] = '\0';
 
-            case 0:
-                if (fs) close_fs(fs);
-                printf("%sДо свидания!%s\n", CYAN, RESET);
-                return 0;
+                getchar();
+                char* data = read_multiline_input();
+                if (!data) {
+                    printf("Ошибка чтения данных\n");
+                    break;
+                }
 
-            default:
-                printf("%sНеверный выбор. Повторите попытку.%s\n", RED, RESET);
+                if (write_file1(fs, filename, data)) {
+                    printf("\nЗапись успешна\n");
+                }
+                else {
+                    printf("\nОшибка записи\n");
+                }
+                free(data);
+            }
+            break;
+
+        case 7:
+            // Чтение файла
+            if (!fs) fs = open_fs(fs_name);
+            if (fs) {
+                printf("Имя файла: ");
+                fgets(filename, sizeof(filename), stdin);
+                filename[strcspn(filename, "\n")] = '\0';
+
+                char buffer[1024];
+                if (read_file(fs, filename, buffer, sizeof(buffer))) {
+                    printf("Содержимое файла:\n%s\n", buffer);
+                }
+                else {
+                    printf("Ошибка чтения\n");
+                }
+            }
+            break;
+
+        case 8:
+            // Показать справку
+            show_help();
+            break;
+        case 0:
+            // Выход
+            if (fs) close_fs(fs);
+            printf("%sДо свидания!%s\n", CYAN, RESET);
+            return 0;
+
+        default:
+            printf("%sНеверный выбор. Повторите попытку.%s\n", RED, RESET);
         }
 
-        clearerr(stdin);
+        clearerr(stdin); // очистка ошибок потока
     }
 }
-
