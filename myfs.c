@@ -213,95 +213,133 @@ void close_fs(FILE* fs) {
  * @return       Номер inode или -1 при ошибке
  */
 int create_file(FILE* fs, const char* name) {
-    // Проверка длины имени
+    // Проверка параметров
+    if (!fs || !name) {
+        fprintf(stderr, "Error: Invalid parameters\n");
+        return -1;
+    }
+
     if (strlen(name) >= 256) {
-        fprintf(stderr, "Ошибка: имя файла слишком длинное\n");
+        fprintf(stderr, "Error: Filename too long\n");
         return -1;
     }
 
     // Чтение суперблока
     SuperBlock sb;
-    if (fseek(fs, SUPERBLOCK_OFFSET, SEEK_SET) != 0 ||
+    if (fseek(fs, SUPERBLOCK_OFFSET, SEEK_SET) != 0 || 
         fread(&sb, sizeof(SuperBlock), 1, fs) != 1) {
-        perror("Ошибка чтения суперблока");
+        perror("Superblock read failed");
         return -1;
     }
 
-    // Проверка наличия свободных inode
+    // Проверка свободных inodes
     if (sb.free_inodes == 0) {
-        fprintf(stderr, "Ошибка: нет свободных inode\n");
-        return -1;
-    }
-
-    // Загрузка битовой карты inode
-    uint8_t inode_bitmap[INODE_COUNT / 8];
-    if (fseek(fs, sb.inode_bitmap, SEEK_SET) != 0 ||
-        fread(inode_bitmap, sizeof(inode_bitmap), 1, fs) != 1) {
-        perror("Ошибка чтения битмапа inode");
+        fprintf(stderr, "Error: No free inodes\n");
         return -1;
     }
 
     // Поиск существующего файла и свободного inode
+    uint8_t inode_bitmap[INODE_COUNT/8];
+    if (fseek(fs, sb.inode_bitmap, SEEK_SET) != 0 ||
+        fread(inode_bitmap, sizeof(inode_bitmap), 1, fs) != 1) {
+        perror("Inode bitmap read failed");
+        return -1;
+    }
+
     int free_inode = -1;
     Inode temp;
 
     for (int i = 0; i < INODE_COUNT; i++) {
-        if (inode_bitmap[i / 8] & (1 << (i % 8))) {
-            // Проверка имени файла
-            if (fseek(fs, sb.inode_table + i * sizeof(Inode), SEEK_SET) != 0 ||
+        if (inode_bitmap[i/8] & (1 << (i%8))) {
+            if (fseek(fs, sb.inode_table + i*sizeof(Inode), SEEK_SET) != 0 ||
                 fread(&temp, sizeof(Inode), 1, fs) != 1) {
                 continue;
             }
 
-            if (strncmp(temp.name, name, sizeof(temp.name)) == 0) {
-                printf("Ошибка: файл '%s' уже существует (inode %d)\n", name, i);
+            if (strcmp(temp.name, name) == 0) {
+                fprintf(stderr, "Error: File '%s' already exists\n", name);
                 return -1;
             }
-        } else if (free_inode == -1) {
-            free_inode = i; // Нашли первый свободный inode
+        } 
+        else if (free_inode == -1) {
+            free_inode = i;
         }
     }
 
     if (free_inode == -1) {
-        fprintf(stderr, "Ошибка: не найден свободный inode\n");
+        fprintf(stderr, "Error: No free inodes found\n");
         return -1;
     }
 
-    // Создание нового inode
-    Inode new_inode = {
-        .size = 0,
-        .mtime = time(NULL),
-        .blocks = {0}
-    };
-    strncpy(new_inode.name, name, sizeof(new_inode.name) - 1);
-    new_inode.name[sizeof(new_inode.name) - 1] = '\0';
-
-    // Запись inode в таблицу
-    if (fseek(fs, sb.inode_table + free_inode * sizeof(Inode), SEEK_SET) != 0 ||
-        fwrite(&new_inode, sizeof(Inode), 1, fs) != 1) {
-        perror("Ошибка записи нового inode");
+    // Выделение блоков при создании (1 блок по умолчанию)
+    uint8_t block_bitmap[BLOCK_COUNT/8];
+    if (fseek(fs, sb.block_bitmap, SEEK_SET) != 0 ||
+        fread(block_bitmap, sizeof(block_bitmap), 1, fs) != 1) {
+        perror("Block bitmap read failed");
         return -1;
     }
 
-    // Обновление битмапа inode
-    inode_bitmap[free_inode / 8] |= (1 << (free_inode % 8));
+    Inode new_inode = {0};
+    strncpy(new_inode.name, name, sizeof(new_inode.name)-1);
+    new_inode.mtime = time(NULL);
+    
+    // Выделяем 1 начальный блок
+    int blocks_allocated = 0;
+    for (int i = 0; i < BLOCK_COUNT && blocks_allocated < 1; i++) {
+        if (!(block_bitmap[i/8] & (1 << (i%8)))) {
+            block_bitmap[i/8] |= (1 << (i%8));
+            new_inode.blocks[blocks_allocated] = i;
+            blocks_allocated++;
+            sb.free_blocks--;
+
+            // Инициализация блока нулями
+            char zero_block[BLOCK_SIZE] = {0};
+            if (fseek(fs, sb.data_start + i*BLOCK_SIZE, SEEK_SET) != 0 ||
+                fwrite(zero_block, BLOCK_SIZE, 1, fs) != 1) {
+                perror("Block initialization failed");
+                return -1;
+            }
+        }
+    }
+
+    if (blocks_allocated == 0) {
+        fprintf(stderr, "Error: No free blocks available\n");
+        return -1;
+    }
+
+    // Обновление структур
+    inode_bitmap[free_inode/8] |= (1 << (free_inode%8));
+    sb.free_inodes--;
+
+    // Запись изменений
     if (fseek(fs, sb.inode_bitmap, SEEK_SET) != 0 ||
         fwrite(inode_bitmap, sizeof(inode_bitmap), 1, fs) != 1) {
-        perror("Ошибка обновления битмапа inode");
+        perror("Inode bitmap update failed");
         return -1;
     }
 
-    // Обновление суперблока
-    sb.free_inodes--;
+    if (fseek(fs, sb.inode_table + free_inode*sizeof(Inode), SEEK_SET) != 0 ||
+        fwrite(&new_inode, sizeof(Inode), 1, fs) != 1) {
+        perror("Inode write failed");
+        return -1;
+    }
+
+    if (fseek(fs, sb.block_bitmap, SEEK_SET) != 0 ||
+        fwrite(block_bitmap, sizeof(block_bitmap), 1, fs) != 1) {
+        perror("Block bitmap update failed");
+        return -1;
+    }
+
     if (fseek(fs, SUPERBLOCK_OFFSET, SEEK_SET) != 0 ||
         fwrite(&sb, sizeof(SuperBlock), 1, fs) != 1) {
-        perror("Ошибка обновления суперблока");
+        perror("Superblock update failed");
         return -1;
     }
 
-    printf("Создан файл '%s' (inode %d)\n", name, free_inode);
+    fflush(fs);
     return free_inode;
 }
+
 /**
  * Удаляет файл по имени из ФС.
  * @param fs    Указатель на открытую файловую систему
@@ -437,6 +475,9 @@ void list_files(FILE* fs) {
                 if (node.blocks[j] != 0) used_blocks++;
             }
 
+            if (node.size == 0)
+                used_blocks = 0;
+
             // Форматирование имени (обрезаем до 15 символов)
             char short_name[16];
             strncpy(short_name, node.name, 15);
@@ -481,157 +522,144 @@ void list_files(FILE* fs) {
  * @return         1 при успехе, 0 при ошибке
  */
 int write_file(FILE* fs, const char* filename, const char* data) {
-    // Проверка входных параметров
+    // Проверка параметров
     if (!fs || !filename || !data) {
-        fprintf(stderr, "Ошибка: неверные параметры\n");
+        fprintf(stderr, "Error: Invalid parameters\n");
         return 0;
     }
 
-    // Проверка длины имени файла
-    if (strlen(filename) >= 256) {
-        fprintf(stderr, "Ошибка: имя файла слишком длинное\n");
+    size_t data_len = strlen(data);
+    if (data_len == 0) {
+        fprintf(stderr, "Error: Empty data\n");
         return 0;
     }
 
-    // Чтение суперблока
+    // Чтение метаданных
     SuperBlock sb;
-    if (fseek(fs, SUPERBLOCK_OFFSET, SEEK_SET) != 0 ||
+    if (fseek(fs, SUPERBLOCK_OFFSET, SEEK_SET) != 0 || 
         fread(&sb, sizeof(SuperBlock), 1, fs) != 1) {
-        perror("Ошибка чтения суперблока");
+        perror("Superblock read failed");
         return 0;
     }
 
-    // Чтение битовой карты inode
-    uint8_t inode_bitmap[INODE_COUNT / 8];
+    // Поиск файла
+    Inode node;
+    int inode_idx = -1;
+    uint8_t inode_bitmap[INODE_COUNT/8];
+    
     if (fseek(fs, sb.inode_bitmap, SEEK_SET) != 0 ||
         fread(inode_bitmap, sizeof(inode_bitmap), 1, fs) != 1) {
-        perror("Ошибка чтения битмапа inode");
+        perror("Inode bitmap read failed");
         return 0;
     }
 
-    // Поиск файла по имени
-    Inode node;
-    int found_inode = -1;
-    
     for (int i = 0; i < INODE_COUNT; i++) {
-        // Пропускаем свободные inode
-        if (!(inode_bitmap[i / 8] & (1 << (i % 8)))) continue;
+        if (!(inode_bitmap[i/8] & (1 << (i%8)))) continue;
 
-        // Читаем inode
-        if (fseek(fs, sb.inode_table + i * sizeof(Inode), SEEK_SET) != 0 ||
+        if (fseek(fs, sb.inode_table + i*sizeof(Inode), SEEK_SET) != 0 ||
             fread(&node, sizeof(Inode), 1, fs) != 1) {
-            perror("Ошибка чтения inode");
+            perror("Inode read failed");
             continue;
         }
 
-        // Проверяем имя файла
-        if (strncmp(node.name, filename, sizeof(node.name)) == 0) {
-            found_inode = i;
+        if (strcmp(node.name, filename) == 0) {
+            inode_idx = i;
             break;
         }
     }
 
-    if (found_inode == -1) {
-        fprintf(stderr, "Файл '%s' не найден\n", filename);
+    if (inode_idx == -1) {
+        fprintf(stderr, "Error: File '%s' not found\n", filename);
         return 0;
     }
 
-    // Чтение битовой карты блоков
-    uint8_t block_bitmap[BLOCK_COUNT / 8];
-    if (fseek(fs, sb.block_bitmap, SEEK_SET) != 0 ||
-        fread(block_bitmap, sizeof(block_bitmap), 1, fs) != 1) {
-        perror("Ошибка чтения битмапа блоков");
-        return 0;
-    }
-
-    // Освобождаем ранее занятые блоки
-    for (int i = 0; i < 12; i++) {
-        if (node.blocks[i] != 0) {
-            uint32_t block_num = node.blocks[i];
-            if (block_num < BLOCK_COUNT) {
-                block_bitmap[block_num / 8] &= ~(1 << (block_num % 8));
-                sb.free_blocks++;
-            }
-            node.blocks[i] = 0;
-        }
-    }
-
-    // Вычисляем необходимое количество блоков
-    size_t data_len = strlen(data);
+    // Расчет необходимых блоков
     size_t required_blocks = (data_len + BLOCK_SIZE - 1) / BLOCK_SIZE;
-
     if (required_blocks > 12) {
-        fprintf(stderr, "Ошибка: файл слишком большой (макс 12 блоков)\n");
+        fprintf(stderr, "Error: File too large (max 12 blocks)\n");
         return 0;
     }
 
-    // Выделяем новые блоки
-    int blocks_allocated = 0;
-    for (int i = 0; i < BLOCK_COUNT && blocks_allocated < required_blocks; i++) {
-        if (!(block_bitmap[i / 8] & (1 << (i % 8)))) {
-            block_bitmap[i / 8] |= (1 << (i % 8));
-            node.blocks[blocks_allocated++] = i;
-            sb.free_blocks--;
-        }
+    // Проверка выделенных блоков
+    int current_blocks = 0;
+    while (current_blocks < 12 && node.blocks[current_blocks] != 0) {
+        current_blocks++;
     }
 
-    // Проверка выделения блоков
-    if (blocks_allocated < required_blocks) {
-        fprintf(stderr, "Ошибка: недостаточно свободных блоков\n");
-        // Откатываем изменения
-        for (int i = 0; i < blocks_allocated; i++) {
-            block_bitmap[node.blocks[i] / 8] &= ~(1 << (node.blocks[i] % 8));
-            sb.free_blocks++;
+    // Выделение дополнительных блоков при необходимости
+    if (required_blocks > current_blocks) {
+        uint8_t block_bitmap[BLOCK_COUNT/8];
+        if (fseek(fs, sb.block_bitmap, SEEK_SET) != 0 ||
+            fread(block_bitmap, sizeof(block_bitmap), 1, fs) != 1) {
+            perror("Block bitmap read failed");
+            return 0;
         }
-        return 0;
-    }
 
-    // Записываем данные в выделенные блоки
-    for (int i = 0; i < blocks_allocated; i++) {
-        size_t offset = i * BLOCK_SIZE;
-        size_t to_write = (offset + BLOCK_SIZE > data_len) ? data_len - offset : BLOCK_SIZE;
+        int blocks_needed = required_blocks - current_blocks;
+        int blocks_allocated = 0;
+        
+        for (int i = 0; i < BLOCK_COUNT && blocks_allocated < blocks_needed; i++) {
+            if (!(block_bitmap[i/8] & (1 << (i%8)))) {
+                block_bitmap[i/8] |= (1 << (i%8));
+                node.blocks[current_blocks + blocks_allocated] = i;
+                blocks_allocated++;
+                sb.free_blocks--;
 
-        if (fseek(fs, sb.data_start + node.blocks[i] * BLOCK_SIZE, SEEK_SET) != 0 ||
-            fwrite(data + offset, 1, to_write, fs) != to_write) {
-            perror("Ошибка записи блока");
+                // Инициализация нового блока
+                char zero_block[BLOCK_SIZE] = {0};
+                if (fseek(fs, sb.data_start + i*BLOCK_SIZE, SEEK_SET) != 0 ||
+                    fwrite(zero_block, BLOCK_SIZE, 1, fs) != 1) {
+                    perror("Block initialization failed");
+                    return 0;
+                }
+            }
+        }
+
+        if (blocks_allocated < blocks_needed) {
+            fprintf(stderr, "Error: Not enough free blocks\n");
+            return 0;
+        }
+
+        // Обновление битмапа блоков
+        if (fseek(fs, sb.block_bitmap, SEEK_SET) != 0 ||
+            fwrite(block_bitmap, sizeof(block_bitmap), 1, fs) != 1) {
+            perror("Block bitmap update failed");
             return 0;
         }
     }
 
-    // Обновляем метаданные файла
-    node.size = (uint32_t)data_len;
-    node.mtime = time(NULL);  // Устанавливаем текущее время
+    // Запись данных
+    for (int i = 0; i < required_blocks; i++) {
+        size_t offset = i * BLOCK_SIZE;
+        size_t to_write = (offset + BLOCK_SIZE > data_len) 
+                        ? data_len - offset 
+                        : BLOCK_SIZE;
+
+        if (fseek(fs, sb.data_start + node.blocks[i]*BLOCK_SIZE, SEEK_SET) != 0 ||
+            fwrite(data + offset, 1, to_write, fs) != to_write) {
+            perror("Data write failed");
+            return 0;
+        }
+    }
+
+    // Обновление метаданных
+    node.size = data_len;
+    node.mtime = time(NULL);
 
 
-    // Записываем обновленный inode
-    if (fseek(fs, sb.inode_table + found_inode * sizeof(Inode), SEEK_SET) != 0 ||
+    if (fseek(fs, sb.inode_table + inode_idx*sizeof(Inode), SEEK_SET) != 0 ||
         fwrite(&node, sizeof(Inode), 1, fs) != 1) {
-        perror("Ошибка записи inode");
+        perror("Inode update failed");
         return 0;
     }
 
-    // Обновляем битовую карту блоков
-    if (fseek(fs, sb.block_bitmap, SEEK_SET) != 0 ||
-        fwrite(block_bitmap, sizeof(block_bitmap), 1, fs) != 1) {
-        perror("Ошибка записи битмапа блоков");
-        return 0;
-    }
-
-    // Обновляем суперблок
     if (fseek(fs, SUPERBLOCK_OFFSET, SEEK_SET) != 0 ||
         fwrite(&sb, sizeof(SuperBlock), 1, fs) != 1) {
-        perror("Ошибка обновления суперблока");
+        perror("Superblock update failed");
         return 0;
     }
 
-    // Принудительно сбрасываем буферы
-    if (fflush(fs) != 0) {
-        perror("Ошибка сброса буферов");
-        return 0;
-    }
-
-    printf("Данные успешно записаны в файл '%s' (inode %d, блоков: %d)\n",
-           filename, found_inode, blocks_allocated);
+    fflush(fs);
     return 1;
 }
 
