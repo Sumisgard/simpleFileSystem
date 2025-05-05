@@ -2,7 +2,7 @@
 #include <string.h>
 #include <time.h>
 
-#define FS_MAGIC 0x4D594653 // проверка валидности файловой системы
+#define FS_MAGIC 0x4D594653 // "MYFS"
 
 // -----------------------------------------------------------------------------
 // Описание: Функции для чтения и записи суперблока файловой системы
@@ -60,7 +60,7 @@ bool format_fs(const char* filename) {
     // Открываем файл-образ файловой системы с обнулением содержимого
     FILE* fs = fopen(filename, "wb+");
     if (!fs) {
-        perror("Не удалось открыть файл для форматирования"); // Ошибка открытия файла
+        perror("Не удалось открыть файл для форматирования");
         return false;
     }
 
@@ -81,7 +81,7 @@ bool format_fs(const char* filename) {
     // Пишем суперблок в файл
     if (!write_superblock(fs, &sb)) {
         perror("Ошибка записи суперблока");
-        fclose(fs); // Закрываем файл в случае ошибки
+        fclose(fs);
         return false;
     }
 
@@ -93,7 +93,7 @@ bool format_fs(const char* filename) {
     fseek(fs, INODE_BITMAP_OFFSET, SEEK_SET);
     if (fwrite(inode_bitmap, sizeof(inode_bitmap), 1, fs) != 1) {
         perror("Ошибка записи битмапа inode");
-        fclose(fs); // Закрываем файл в случае ошибки
+        fclose(fs);
         return false;
     }
 
@@ -101,7 +101,7 @@ bool format_fs(const char* filename) {
     fseek(fs, BLOCK_BITMAP_OFFSET, SEEK_SET);
     if (fwrite(block_bitmap, sizeof(block_bitmap), 1, fs) != 1) {
         perror("Ошибка записи битмапа блоков");
-        fclose(fs); // Закрываем файл в случае ошибки
+        fclose(fs);
         return false;
     }
 
@@ -111,7 +111,7 @@ bool format_fs(const char* filename) {
     for (int i = 0; i < INODE_COUNT; i++) {
         if (fwrite(&empty_inode, sizeof(Inode), 1, fs) != 1) {
             perror("Ошибка записи inode таблицы");
-            fclose(fs); // Закрываем файл в случае ошибки
+            fclose(fs);
             return false;
         }
     }
@@ -122,7 +122,7 @@ bool format_fs(const char* filename) {
     for (int i = 0; i < BLOCK_COUNT; ++i) {
         if (fwrite(zero_block, BLOCK_SIZE, 1, fs) != 1) {
             perror("Ошибка обнуления блоков данных");
-            fclose(fs); // Закрываем файл в случае ошибки
+            fclose(fs);
             return false;
         }
     }
@@ -170,8 +170,8 @@ FILE* open_fs(const char* filename) {
 
     // 4. Проверка совместимости размеров блока
     if (sb.block_size != BLOCK_SIZE) {
-        fprintf(stderr, "Ошибка: несовместимый размер блока (%u != %u)\n",
-            sb.block_size, BLOCK_SIZE);
+        fprintf(stderr, "Ошибка: несовместимый размер блока (%u != %u)\n", 
+                sb.block_size, BLOCK_SIZE);
         fclose(fs);
         return NULL;
     }
@@ -187,9 +187,9 @@ FILE* open_fs(const char* filename) {
  * Разработчик: Дарья
  */
 void close_fs(FILE* fs) {
-    if (!fs) return;  // Если указатель на ФС NULL, ничего не делаем
+    if (!fs) return;
 
-    // 1. Сбрасываем буферы на диск (если есть отложенные данные)
+    // 1. Сбрасываем буферы на диск
     if (fflush(fs) != 0) {
         perror("Предупреждение: ошибка сброса буферов");
     }
@@ -216,7 +216,7 @@ int create_file(FILE* fs, const char* name) {
     // Проверка длины имени
     if (strlen(name) >= 256) {
         fprintf(stderr, "Ошибка: имя файла слишком длинное\n");
-        return -1;  // Если имя слишком длинное, возвращаем ошибку
+        return -1;
     }
 
     // Чтение суперблока
@@ -226,12 +226,6 @@ int create_file(FILE* fs, const char* name) {
         perror("Ошибка чтения суперблока");
         return -1;
     }
-}
-// Проверка, если нет свободных inode
-if (sb.free_inodes == 0) {
-    fprintf(stderr, "Ошибка: нет свободных inodes\n"); // Выводим ошибку, если нет свободных inode
-    return -1; // Возвращаем -1, указывая на ошибку
-}
 
     // Проверка наличия свободных inode
     if (sb.free_inodes == 0) {
@@ -320,9 +314,9 @@ bool delete_file(FILE* fs, const char* name) {
 
     // Чтение суперблока
     if (fseek(fs, SUPERBLOCK_OFFSET, SEEK_SET) != 0 ||
-        fread(&sb, sizeof(SuperBlock), 1, fs) != 1) { // Чтение суперблока
-        perror("Ошибка чтения суперблока"); // Обработка ошибки
-        return false; // Возвращаем false при ошибке
+        fread(&sb, sizeof(SuperBlock), 1, fs) != 1) {
+        perror("Ошибка чтения суперблока");
+        return false;
     }
 
     // Загрузка битмапов
@@ -354,15 +348,15 @@ bool delete_file(FILE* fs, const char* name) {
             return false;
         }
 
-        if (strcmp(inode.name, name) == 0) { // Если нашли файл с нужным именем
-            inode_num = i; // Запоминаем номер inode
-            break; // Выход из цикла
+        if (strcmp(inode.name, name) == 0) {
+            inode_num = i;
+            break;
         }
     }
 
-    if (inode_num == -1) { // Если файл не найден
-        printf("Файл '%s' не найден\n", name); // Выводим сообщение об ошибке
-        return false; // Возвращаем false, так как файл не найден
+    if (inode_num == -1) {
+        printf("Файл '%s' не найден\n", name);
+        return false;
     }
 
     // Освобождение всех блоков, связанных с файлом
@@ -437,7 +431,6 @@ void list_files(FILE* fs) {
                 continue;
             }
 
-
             // Подсчёт используемых блоков
             int used_blocks = 0;
             for (int j = 0; j < 12; j++) {
@@ -479,6 +472,7 @@ void list_files(FILE* fs) {
         }
     }
 }
+
 /**
  * Записывает данные в файл файловой системы
  * @param fs       Указатель на открытую ФС
@@ -487,7 +481,7 @@ void list_files(FILE* fs) {
  * @return         1 при успехе, 0 при ошибке
  */
 int write_file(FILE* fs, const char* filename, const char* data) {
-    // Проверка входных параметров на null
+    // Проверка входных параметров
     if (!fs || !filename || !data) {
         fprintf(stderr, "Ошибка: неверные параметры\n");
         return 0;
@@ -503,16 +497,16 @@ int write_file(FILE* fs, const char* filename, const char* data) {
     SuperBlock sb;
     if (fseek(fs, SUPERBLOCK_OFFSET, SEEK_SET) != 0 ||
         fread(&sb, sizeof(SuperBlock), 1, fs) != 1) {
-        perror("Ошибка чтения суперблока"); // Ошибка при чтении суперблока
-        return 0; // Возвращаем 0 при ошибке
+        perror("Ошибка чтения суперблока");
+        return 0;
     }
 
     // Чтение битовой карты inode
     uint8_t inode_bitmap[INODE_COUNT / 8];
     if (fseek(fs, sb.inode_bitmap, SEEK_SET) != 0 ||
         fread(inode_bitmap, sizeof(inode_bitmap), 1, fs) != 1) {
-        perror("Ошибка чтения битмапа inode"); // Ошибка при чтении битмапа inode
-        return 0; // Возвращаем 0 при ошибке
+        perror("Ошибка чтения битмапа inode");
+        return 0;
     }
 
     // Поиск файла по имени
@@ -526,7 +520,7 @@ int write_file(FILE* fs, const char* filename, const char* data) {
         // Читаем inode
         if (fseek(fs, sb.inode_table + i * sizeof(Inode), SEEK_SET) != 0 ||
             fread(&node, sizeof(Inode), 1, fs) != 1) {
-            perror("Ошибка чтения inode"); // Ошибка при чтении inode
+            perror("Ошибка чтения inode");
             continue;
         }
 
@@ -537,18 +531,17 @@ int write_file(FILE* fs, const char* filename, const char* data) {
         }
     }
 
-    if (found_inode == -1) { // Если файл не найден
-        fprintf(stderr, "Файл '%s' не найден\n", filename); // Выводим сообщение об ошибке
-        return 0; // Возвращаем 0, указывая на ошибку
+    if (found_inode == -1) {
+        fprintf(stderr, "Файл '%s' не найден\n", filename);
+        return 0;
     }
 
     // Чтение битовой карты блоков
     uint8_t block_bitmap[BLOCK_COUNT / 8];
-    // Чтение битмапа блоков с проверкой ошибок
     if (fseek(fs, sb.block_bitmap, SEEK_SET) != 0 ||
         fread(block_bitmap, sizeof(block_bitmap), 1, fs) != 1) {
-        perror("Ошибка чтения битмапа блоков"); // Ошибка при чтении битмапа блоков
-        return 0; // Возвращаем 0 при ошибке
+        perror("Ошибка чтения битмапа блоков");
+        return 0;
     }
 
     // Освобождаем ранее занятые блоки
@@ -575,10 +568,10 @@ int write_file(FILE* fs, const char* filename, const char* data) {
     // Выделяем новые блоки
     int blocks_allocated = 0;
     for (int i = 0; i < BLOCK_COUNT && blocks_allocated < required_blocks; i++) {
-        if (!(block_bitmap[i / 8] & (1 << (i % 8)))) { // Если блок свободен
-            block_bitmap[i / 8] |= (1 << (i % 8)); // Занимаем блок
-            node.blocks[blocks_allocated++] = i; // Записываем номер блока в inode
-            sb.free_blocks--; // Уменьшаем количество свободных блоков
+        if (!(block_bitmap[i / 8] & (1 << (i % 8)))) {
+            block_bitmap[i / 8] |= (1 << (i % 8));
+            node.blocks[blocks_allocated++] = i;
+            sb.free_blocks--;
         }
     }
 
@@ -587,10 +580,10 @@ int write_file(FILE* fs, const char* filename, const char* data) {
         fprintf(stderr, "Ошибка: недостаточно свободных блоков\n");
         // Откатываем изменения
         for (int i = 0; i < blocks_allocated; i++) {
-            block_bitmap[node.blocks[i] / 8] &= ~(1 << (node.blocks[i] % 8)); // Освобождаем выделенные блоки
-            sb.free_blocks++; // Увеличиваем количество свободных блоков
+            block_bitmap[node.blocks[i] / 8] &= ~(1 << (node.blocks[i] % 8));
+            sb.free_blocks++;
         }
-        return 0; // Возвращаем 0 при ошибке
+        return 0;
     }
 
     // Записываем данные в выделенные блоки
@@ -716,7 +709,6 @@ int read_file(FILE* fs, const char* filename, char* buffer, size_t max_size) {
         }
     }
 
-    // Если файл не найден
     if (found_inode == -1) {
         fprintf(stderr, "Файл '%s' не найден в файловой системе\n", filename);
         return 0;
@@ -814,7 +806,6 @@ int write_file1(FILE* fs, const char* filename, const char* data) {
         }
     }
 
-    // Если файл не найден
     if (found_inode == -1) {
         fprintf(stderr, "Файл '%s' не найден\n", filename);
         return 0;
@@ -828,17 +819,14 @@ int write_file1(FILE* fs, const char* filename, const char* data) {
     size_t current_size = node.size;
     size_t total_size = current_size + total_data_len;
 
-    // Определяем количество блоков до и после добавления
     size_t current_blocks = (current_size + BLOCK_SIZE - 1) / BLOCK_SIZE;
     size_t required_blocks = (total_size + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
-    // Проверка, помещается ли файл в допустимые 12 блоков
     if (required_blocks > 12) {
         fprintf(stderr, "Файл слишком большой (максимум 12 блоков)\n");
         return 0;
     }
 
-    // Чтение битмапа блоков
     uint8_t block_bitmap[BLOCK_COUNT / 8];
     if (fseek(fs, sb.block_bitmap, SEEK_SET) != 0 || 
         fread(block_bitmap, sizeof(block_bitmap), 1, fs) != 1) {
@@ -924,3 +912,5 @@ int write_file1(FILE* fs, const char* filename, const char* data) {
 
     return 1;
 }
+
+
