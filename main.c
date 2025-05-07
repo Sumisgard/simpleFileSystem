@@ -39,6 +39,7 @@ void show_help() {
     printf("0. Выход — завершает программу\n");
 }
 
+// Автор: Тимур
 char* read_multiline_input() {
     printf("Введите данные (завершите Ctrl+D или Ctrl+Z):\n\n");
 

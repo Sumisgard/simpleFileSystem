@@ -435,6 +435,7 @@ bool delete_file(FILE* fs, const char* name) {
 /**
  * Выводит список всех файлов в файловой системе
  * @param fs Указатель на открытую файловую систему
+ * Автор: Тимур
  */
 void list_files(FILE* fs) {
     SuperBlock sb;
@@ -488,12 +489,7 @@ void list_files(FILE* fs) {
             if (strstr(node.name, ".txt")) type = "text";
             else if (strstr(node.name, ".dat")) type = "data";
 
-            /****************************************************
-             * КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: корректное преобразование времени
-             * 1. Проверяем, что время не нулевое
-             * 2. Правильно приводим тип к time_t
-             * 3. Проверяем разумные границы времени
-             ****************************************************/
+            
             char timebuf[20] = "unknown";
             if (node.mtime > 0) {
                 time_t mtime = (time_t)node.mtime;
@@ -520,6 +516,7 @@ void list_files(FILE* fs) {
  * @param filename Имя файла (макс 255 символов + '\0')
  * @param data     Данные для записи
  * @return         1 при успехе, 0 при ошибке
+ * Автор: Анатолий 
  */
 int write_file(FILE* fs, const char* filename, const char* data) {
     // Проверка параметров
@@ -670,11 +667,7 @@ int write_file(FILE* fs, const char* filename, const char* data) {
  * @param buffer    Буфер для записи содержимого файла
  * @param max_size  Максимальный размер данных для чтения (включая '\0')
  * @return          Количество прочитанных байт (без учета '\0') или 0 при ошибке
- * 
- * Примечания:
- * 1. Буфер всегда завершается нуль-терминатором
- * 2. Если файл больше max_size - будет прочитано только max_size-1 байт
- * 3. Для бинарных файлов нужно использовать другой подход (без null-termination)
+ * Автор: Дмитрий
  */
 int read_file(FILE* fs, const char* filename, char* buffer, size_t max_size) {
     // Проверка входных параметров
@@ -797,6 +790,8 @@ int read_file(FILE* fs, const char* filename, char* buffer, size_t max_size) {
     return (int)bytes_read;
 }
 
+
+// Автор: Татьяна 
 int write_file1(FILE* fs, const char* filename, const char* data) {
     if (!fs || !filename || !data) {
         fprintf(stderr, "Ошибка: некорректные параметры\n");
